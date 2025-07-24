@@ -19,10 +19,10 @@ load_dotenv(override=True)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Railway provides these automatically
-WEBHOOK_HOST = f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}" if os.getenv('RAILWAY_PUBLIC_DOMAIN') else None
+# Railway specific variables
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # Railway will provide this
 WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else None
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else ""
 
 # Initialize bot and dispatcher
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -174,6 +174,7 @@ async def on_shutdown(bot: Bot):
 
 def main():
     """Starts the bot with webhook."""
+    # Create aiohttp application
     app = web.Application()
 
     # Setup webhook handler
@@ -194,6 +195,8 @@ def main():
     port = int(os.getenv("PORT", 8080))
 
     logging.info(f"Starting web server on port {port}")
+    logging.info(f"Webhook URL will be: {WEBHOOK_URL}")
+
     web.run_app(app, host="0.0.0.0", port=port)
 
 
