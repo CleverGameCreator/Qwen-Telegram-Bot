@@ -6,34 +6,30 @@ import aiohttp
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 import re
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 load_dotenv(override=True)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # Railway предоставит это автоматически
+WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
+WEBhook_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else None
 
-# Debug: Проверим, загрузились ли токены
-logging.info(f"Telegram token loaded: {TELEGRAM_BOT_TOKEN is not None}")
-logging.info(f"OpenRouter key loaded: {OPENROUTER_API_KEY is not None}")
-if OPENROUTER_API_KEY:
-    logging.info(f"OpenRouter key length: {len(OPENROUTER_API_KEY)}")
+# User preferences storage (in-memory, resets on restart)
+user_prefs = {}
 
 # Initialize bot and dispatcher
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
-# User preferences storage (in-memory, resets on restart)
-user_prefs = {}
 
-
-async def invoke_llm_api(user_content: str, show_thoughts: bool = False) -> str:
+async def invoke_llm_api(user_content: str, show_thoughts: bool) -> str:
     """Calls the OpenRouter API and returns the streamed response."""
     if not OPENROUTER_API_KEY:
         return "Ошибка: Токен OPENROUTER_API_KEY не найден в .env"
@@ -44,9 +40,6 @@ async def invoke_llm_api(user_content: str, show_thoughts: bool = False) -> str:
         "HTTP-Referer": os.getenv("REFERER_URL", "http://localhost"),
         "X-Title": os.getenv("TITLE_NAME", "Qwen3 Telegram Bot")
     }
-
-    # Debug: Проверим заголовки
-    logging.info(f"Authorization header: Bearer {OPENROUTER_API_KEY[:10]}...")  # Показываем только начало ключа
 
     body = {
         "model": "qwen/qwen3-235b-a22b:free",
@@ -67,20 +60,15 @@ async def invoke_llm_api(user_content: str, show_thoughts: bool = False) -> str:
     }
 
     full_response = ""
-    # Исправлен URL - убран лишний пробел
     api_url = "https://openrouter.ai/api/v1/chat/completions"
 
     try:
-        logging.info(f"Sending request to {api_url}")
         async with aiohttp.ClientSession() as session:
             async with session.post(api_url, headers=headers, json=body) as response:
-                logging.info(f"Response status: {response.status}")
-
-                # Если статус не 200, читаем тело ответа для диагностики
                 if response.status != 200:
                     error_text = await response.text()
-                    logging.error(f"API Error Response: {error_text}")
-                    return f"Ошибка API: {response.status} - {error_text}"
+                    logging.error(f"API request failed with status {response.status}: {error_text}")
+                    return f"Ошибка при обращении к API: {response.status}"
 
                 async for line in response.content:
                     line = line.decode("utf-8").strip()
@@ -105,7 +93,7 @@ async def invoke_llm_api(user_content: str, show_thoughts: bool = False) -> str:
         logging.error(f"An unexpected error occurred: {e}")
         return "Произошла непредвиденная ошибка."
 
-    # Фильтрация тегов <think> если не разрешено показывать
+    # Фильтрация тегов <think> если не нужно показывать
     if not show_thoughts and full_response:
         full_response = re.sub(r'<think>.*?</think>\s*', '', full_response, flags=re.DOTALL | re.IGNORECASE).strip()
 
@@ -169,18 +157,41 @@ async def handle_message(message: types.Message):
         await message.reply("Не удалось получить ответ.")
 
 
-async def main():
-    """Starts the bot."""
-    if not TELEGRAM_BOT_TOKEN:
-        logging.error("Telegram bot token not found. Set TELEGRAM_BOT_TOKEN in .env file.")
-        return
-    if not OPENROUTER_API_KEY:
-        logging.error("OpenRouter API key not found. Set OPENROUTER_API_KEY in .env file.")
-        return
-
-    logging.info("Starting bot...")
-    await dp.start_polling(bot)
+async def on_startup(bot: Bot):
+    """Setup webhook on startup."""
+    if WEBhook_URL:
+        await bot.set_webhook(WEBhook_URL)
+        logging.info(f"Webhook set to: {WEBhook_URL}")
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
+async def on_shutdown(bot: Bot):
+    """Remove webhook on shutdown."""
+    await bot.delete_webhook()
+
+
+def main():
+    """Starts the bot with webhook."""
+    app = web.Application()
+
+    # Setup webhook handler
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+
+    # Setup application
+    setup_application(app, dp, bot=bot)
+
+    # Add startup and shutdown hooks
+    app.on_startup.append(lambda app: on_startup(bot))
+    app.on_shutdown.append(lambda app: on_shutdown(bot))
+
+    # Get port from Railway or use default
+    port = int(os.getenv("PORT", 8080))
+
+    web.run_app(app, host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+    main()
