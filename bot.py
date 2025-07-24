@@ -15,18 +15,21 @@ logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 load_dotenv(override=True)
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # Railway предоставит это автоматически
-WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
-WEBhook_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else None
 
-# User preferences storage (in-memory, resets on restart)
-user_prefs = {}
+# Railway provides these automatically
+WEBHOOK_HOST = f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}" if os.getenv('RAILWAY_PUBLIC_DOMAIN') else None
+WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else None
 
 # Initialize bot and dispatcher
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
+
+# User preferences storage (in-memory, resets on restart)
+user_prefs = {}
 
 
 async def invoke_llm_api(user_content: str, show_thoughts: bool) -> str:
@@ -93,8 +96,8 @@ async def invoke_llm_api(user_content: str, show_thoughts: bool) -> str:
         logging.error(f"An unexpected error occurred: {e}")
         return "Произошла непредвиденная ошибка."
 
-    # Фильтрация тегов <think> если не нужно показывать
-    if not show_thoughts and full_response:
+    # Filter out <think> tags if user preference is set to False
+    if not show_thoughts:
         full_response = re.sub(r'<think>.*?</think>\s*', '', full_response, flags=re.DOTALL | re.IGNORECASE).strip()
 
     return full_response if full_response else "Не удалось получить ответ от модели."
@@ -159,9 +162,9 @@ async def handle_message(message: types.Message):
 
 async def on_startup(bot: Bot):
     """Setup webhook on startup."""
-    if WEBhook_URL:
-        await bot.set_webhook(WEBhook_URL)
-        logging.info(f"Webhook set to: {WEBhook_URL}")
+    if WEBHOOK_URL:
+        await bot.set_webhook(WEBHOOK_URL)
+        logging.info(f"Webhook set to: {WEBHOOK_URL}")
 
 
 async def on_shutdown(bot: Bot):
@@ -190,6 +193,7 @@ def main():
     # Get port from Railway or use default
     port = int(os.getenv("PORT", 8080))
 
+    logging.info(f"Starting web server on port {port}")
     web.run_app(app, host="0.0.0.0", port=port)
 
 
