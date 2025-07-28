@@ -23,7 +23,8 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # Railway specific variables
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # Railway will provide this
 WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else ""
+# Добавляем поддержку явного указания полного URL вебхука
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else "")
 
 # Initialize bot and dispatcher
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -31,11 +32,6 @@ dp = Dispatcher()
 
 # User preferences storage (in-memory, resets on restart)
 user_prefs = {}
-
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # Railway will provide this
-WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
-# Добавляем поддержку явного указания полного URL вебхука
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else "")
 
 async def on_startup(bot: Bot):
     """Setup webhook on startup."""
@@ -162,7 +158,19 @@ async def main():
     if not TELEGRAM_BOT_TOKEN:
         logging.error("Telegram bot token not found. Set TELEGRAM_BOT_TOKEN in .env file.")
         return
-    await dp.start_polling(bot)
+    if WEBHOOK_URL:
+        # Запуск aiohttp сервера для webhook
+        app = web.Application()
+        SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+        setup_application(app, dp, bot=bot)
+        await on_startup(bot)
+        port = int(os.getenv("PORT", 8080))
+        logging.info(f"Starting webhook server on 0.0.0.0:{port}")
+        web.run_app(app, host="0.0.0.0", port=port)
+    else:
+        # Fallback: локальный запуск через polling
+        logging.info("WEBHOOK_URL not set, starting polling mode.")
+        await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
