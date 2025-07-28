@@ -19,6 +19,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 logging.info(f"Raw TELEGRAM_BOT_TOKEN from env (repr): {repr(TELEGRAM_BOT_TOKEN)}")
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+logging.info(f"OPENROUTER_API_KEY from env: {repr(OPENROUTER_API_KEY)}")
 
 # Railway specific variables
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # Railway will provide this
