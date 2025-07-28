@@ -155,30 +155,31 @@ async def handle_message(message: types.Message):
         await message.reply("Не удалось получить ответ.")
 
 
-def start_webhook():
+def main():
+    """Starts the bot with webhook."""
+    # Create aiohttp application
     app = web.Application()
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    # Setup webhook handler
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    # Setup application
     setup_application(app, dp, bot=bot)
+    # Add startup and shutdown hooks
+    # Исправлено: передаем корутину, а не результат её вызова
+    app.on_startup.append(lambda app: on_startup(bot))
+    app.on_shutdown.append(lambda app: on_shutdown(bot))
+    # Get port from Railway or use default
     port = int(os.getenv("PORT", 8080))
     logging.info(f"Starting web server on port {port}")
-    # Важно: запускать web.run_app вне asyncio.run!
+    logging.info(f"Webhook URL will be: {WEBHOOK_URL}")
+    # Запускаем приложение напрямую. web.run_app сам управляет event loop'ом.
     web.run_app(app, host="0.0.0.0", port=port)
 
-
-async def main():
-    """Starts the bot."""
-    if not TELEGRAM_BOT_TOKEN:
-        logging.error("Telegram bot token not found. Set TELEGRAM_BOT_TOKEN in .env file.")
-        return
-    if WEBHOOK_URL:
-        await on_startup(bot)
-        # Не запускаем web.run_app здесь!
-    else:
-        logging.info("WEBHOOK_URL not set, starting polling mode.")
-        await dp.start_polling(bot)
-
-if __name__ == '__main__':
-    if os.getenv("WEBHOOK_URL") or os.getenv("WEBHOOK_HOST"):
-        start_webhook()
-    else:
-        asyncio.run(main())
+# --- ИСПРАВЛЕНИЕ НИЖЕ ---
+if __name__ == "__main__":
+    # НЕ используем asyncio.run(main()) для функции, которая сама управляет loop'ом
+    main() # <--- Просто вызываем main() напрямую
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
