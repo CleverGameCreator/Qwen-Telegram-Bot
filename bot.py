@@ -9,23 +9,51 @@ from aiogram.filters import CommandStart, Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 import re
+import reprlib # Для сокращенного представления длинных строк
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 load_dotenv(override=True)
+
+# --- НАЧАЛО НОВОГО ОТЛАДОЧНОГО ВЫВОДА ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-logging.info(f"Raw TELEGRAM_BOT_TOKEN from env (repr): {repr(TELEGRAM_BOT_TOKEN)}")
-
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-logging.info(f"OPENROUTER_API_KEY from env: {repr(OPENROUTER_API_KEY)}")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")
 
-# Railway specific variables
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # Railway will provide this
-WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
-# Добавляем поддержку явного указания полного URL вебхука
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else "")
+# Выводим значения и их типы/длины
+logging.info(f"DEBUG: TELEGRAM_BOT_TOKEN raw value: {repr(TELEGRAM_BOT_TOKEN)}")
+logging.info(f"DEBUG: TELEGRAM_BOT_TOKEN type: {type(TELEGRAM_BOT_TOKEN)}, length: {len(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else 'N/A'}")
+# Проверяем каждый символ на наличие необычных кодов
+if TELEGRAM_BOT_TOKEN:
+    for i, char in enumerate(TELEGRAM_BOT_TOKEN):
+         if ord(char) < 32 or ord(char) > 126: # Печатаем только непечатаемые символы
+             logging.info(f"DEBUG: Non-printable char in TELEGRAM_BOT_TOKEN at pos {i}: ord={ord(char)}")
+
+logging.info(f"DEBUG: WEBHOOK_HOST raw value: {repr(WEBHOOK_HOST)}")
+logging.info(f"DEBUG: WEBHOOK_HOST type: {type(WEBHOOK_HOST)}, length: {len(WEBHOOK_HOST) if WEBHOOK_HOST else 'N/A'}")
+
+# Формируем WEBHOOK_PATH и WEBHOOK_URL шаг за шагом с отладкой
+if TELEGRAM_BOT_TOKEN:
+    WEBHOOK_PATH = f"/webhook/{TELEGRAM_BOT_TOKEN}"
+    logging.info(f"DEBUG: Formed WEBHOOK_PATH: {repr(WEBHOOK_PATH)}")
+    logging.info(f"DEBUG: WEBHOOK_PATH type: {type(WEBHOOK_PATH)}, length: {len(WEBHOOK_PATH)}")
+else:
+    WEBHOOK_PATH = ""
+    logging.info("DEBUG: TELEGRAM_BOT_TOKEN is None or empty, WEBHOOK_PATH set to empty string")
+
+if WEBHOOK_HOST and WEBHOOK_PATH:
+     # Проверяем WEBHOOK_HOST на завершающий слеш
+     if WEBHOOK_HOST.endswith('/'):
+         logging.warning("DEBUG: WEBHOOK_HOST ends with '/'. This might cause double slash in URL.")
+     WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+     logging.info(f"DEBUG: Formed WEBHOOK_URL: {repr(WEBHOOK_URL)}")
+     logging.info(f"DEBUG: WEBHOOK_URL type: {type(WEBHOOK_URL)}, length: {len(WEBHOOK_URL)}")
+else:
+     WEBHOOK_URL = ""
+     logging.info("DEBUG: WEBHOOK_HOST or WEBHOOK_PATH is empty, WEBHOOK_URL set to empty string")
+# --- КОНЕЦ НОВОГО ОТЛАДОЧНОГО ВЫВОДА ---
 
 # Initialize bot and dispatcher
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
